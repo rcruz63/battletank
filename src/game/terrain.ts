@@ -8,6 +8,7 @@ export interface TerrainConfig {
   segments: number;
   hillScale: number;
   mountainScale: number;
+  seed?: number;
 }
 
 export const DEFAULT_TERRAIN_CONFIG: TerrainConfig = {
@@ -17,25 +18,76 @@ export const DEFAULT_TERRAIN_CONFIG: TerrainConfig = {
   mountainScale: 28.0,
 };
 
+let activeTerrainSeed = 1980;
+
+export function setTerrainSeed(seed: number) {
+  activeTerrainSeed = seed;
+}
+
+export function getTerrainSeed(): number {
+  return activeTerrainSeed;
+}
+
+function getHarmonicParams(seed: number) {
+  if (seed === 1980) {
+    return {
+      f1x: 0.02,
+      f1z: 0.02,
+      off1: 0,
+      f2x: 0.045,
+      f2z: 0.038,
+      off2x: 1.2,
+      off2z: -0.7,
+      f3: 0.015,
+      hillMult: 1.0,
+      m1x: 0.012,
+      m1z: 0.015,
+    };
+  }
+
+  const s = Math.abs(seed);
+  const p1 = ((s * 9301 + 49297) % 233280) / 233280;
+  const p2 = (((s + 11) * 9301 + 49297) % 233280) / 233280;
+  const p3 = (((s + 37) * 9301 + 49297) % 233280) / 233280;
+  const p4 = (((s + 71) * 9301 + 49297) % 233280) / 233280;
+  const p5 = (((s + 109) * 9301 + 49297) % 233280) / 233280;
+
+  return {
+    f1x: 0.016 + p1 * 0.01,
+    f1z: 0.016 + p2 * 0.01,
+    off1: p1 * Math.PI * 2,
+    f2x: 0.035 + p3 * 0.02,
+    f2z: 0.03 + p4 * 0.02,
+    off2x: p3 * Math.PI * 2,
+    off2z: p4 * Math.PI * 2,
+    f3: 0.012 + p5 * 0.008,
+    hillMult: 0.85 + p2 * 0.45,
+    m1x: 0.01 + p3 * 0.008,
+    m1z: 0.012 + p4 * 0.008,
+  };
+}
+
 /**
  * Returns height Y at world position (x, z).
  * Includes smooth valleys near origin for fair combat starting zone,
  * surrounded by rolling hills and distant mountainous peaks.
  */
 export function getTerrainHeight(x: number, z: number, config: TerrainConfig = DEFAULT_TERRAIN_CONFIG): number {
+  const seed = config.seed ?? activeTerrainSeed;
+  const params = getHarmonicParams(seed);
   const distFromCenter = Math.sqrt(x * x + z * z);
 
-  // Flat combat arena zone around spawn (radius 35) to allow immediate battle readiness
+  // Flat combat arena zone around spawn (radius 30) to allow immediate battle readiness
   const centerFlatten = Math.min(1, Math.max(0, (distFromCenter - 30) / 45));
 
-  // Primary rolling terrain harmonics
-  const h1 = Math.sin(x * 0.02) * Math.cos(z * 0.02) * config.hillScale;
-  const h2 = Math.sin(x * 0.045 + 1.2) * Math.cos(z * 0.038 - 0.7) * (config.hillScale * 0.5);
-  const h3 = Math.cos((x + z) * 0.015) * (config.hillScale * 0.35);
+  // Primary rolling terrain harmonics driven by seed
+  const h1 = Math.sin(x * params.f1x + params.off1) * Math.cos(z * params.f1z + params.off1) * (config.hillScale * params.hillMult);
+  const h2 = Math.sin(x * params.f2x + params.off2x) * Math.cos(z * params.f2z + params.off2z) * (config.hillScale * params.hillMult * 0.5);
+  const h3 = Math.cos((x + z) * params.f3) * (config.hillScale * params.hillMult * 0.35);
 
   // Distant mountain ranges that rise towards the perimeter
   const mountainRamp = Math.max(0, (distFromCenter - 140) / 130);
-  const m1 = (Math.sin(x * 0.012) * Math.sin(z * 0.015) + 0.5) * config.mountainScale * mountainRamp;
+  const m1 = (Math.sin(x * params.m1x) * Math.sin(z * params.m1z) + 0.5) * config.mountainScale * mountainRamp;
 
   return (h1 + h2 + h3) * centerFlatten + m1;
 }

@@ -38,6 +38,8 @@ interface CockpitHUDProps {
   isMuted: boolean;
   isPointerLocked: boolean;
   controlMode?: 'solidary' | 'conic' | 'free';
+  isRepairing?: boolean;
+  matchSeed?: number;
   onToggleMute: () => void;
   onPause: () => void;
   onRequestPointerLock: () => void;
@@ -68,6 +70,8 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
   isMuted,
   isPointerLocked,
   controlMode = 'solidary',
+  isRepairing = false,
+  matchSeed,
   onToggleMute,
   onPause,
   onRequestPointerLock,
@@ -99,7 +103,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
       {/* TOP STATUS BAR: Phase, Score, Compass, Enemy/Boss Info, & Audio/Pause Buttons */}
       <div className="relative flex flex-col z-10 w-full px-2 gap-1.5">
         <div className="flex items-start justify-between w-full">
-          {/* Left: Phase & Score */}
+          {/* Left: Phase & Score & Procedural Seed */}
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="text-xs px-2 py-0.5 border border-[#00ff66]/50 bg-black/75 rounded text-[#33ff88] tracking-widest uppercase font-bold">
@@ -108,6 +112,11 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
               <span className="text-xs text-[#00aa44] tracking-wider uppercase font-semibold">
                 {stageName}
               </span>
+              {matchSeed && (
+                <span className="text-[10px] px-1.5 py-0.5 border border-[#00aa44]/40 bg-black/60 rounded text-[#00aa44] font-mono tracking-wider" title="Semilla de terreno procedural">
+                  MAPA #{matchSeed}
+                </span>
+              )}
             </div>
             <div className="text-2xl font-bold tracking-widest text-[#00ff66] drop-shadow-[0_0_8px_rgba(0,255,102,0.6)] tabular-nums mt-0.5">
               PUNTOS {score.toString().padStart(6, '0')}
@@ -200,26 +209,33 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
             </div>
           </div>
         )}
+
+        {/* NOTIFICACIÓN DE ESTACIÓN DE REPARACIÓN / CURACIÓN EN CURSO */}
+        {isRepairing && (
+          <div className="self-center flex items-center gap-2 px-4 py-1.5 bg-black/95 border-2 border-[#00ff88] text-[#00ffaa] text-xs font-bold tracking-widest uppercase rounded-lg shadow-[0_0_20px_rgba(0,255,136,0.5)] animate-pulse">
+            <Shield className="w-4 h-4 text-[#00ffaa]" />
+            <span>✚ REPARANDO BLINDAJE EN ESTACIÓN (+25 HP/S)</span>
+          </div>
+        )}
       </div>
 
-      {/* MINIMALIST RETICLE-ONLY LOCK BRACKET OVER ENEMY (Zero background, 100% transparent center) */}
+      {/* ENCUADRE ROJO DE BLANCO ENEMIGO FIJADO (Target Lock - encuadra al enemigo SIN taparlo ni obstaculizar) */}
       {targetedEnemy && targetedEnemy.inView && (
         <div
-          className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 z-15 transition-all duration-75"
+          className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 z-15 transition-all duration-75 flex items-center justify-center"
           style={{ left: `${targetedEnemy.screenX}%`, top: `${targetedEnemy.screenY}%` }}
         >
-          {/* Razor-thin Battlezone lock bracket: ZERO background, ZERO text obstruction */}
-          <div className="w-10 h-10 relative flex items-center justify-center">
-            <div className="absolute top-0 left-0 w-2.5 h-2.5 border-t-2 border-l-2 border-[#ff3344]" />
-            <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t-2 border-r-2 border-[#ff3344]" />
-            <div className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b-2 border-l-2 border-[#ff3344]" />
-            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b-2 border-r-2 border-[#ff3344]" />
-            <div className="w-1 h-1 bg-[#ff3344] rounded-full" />
+          {/* Tactical Target Lock Frame with corner brackets - open center, NO text covering the enemy */}
+          <div className="w-14 h-14 relative flex items-center justify-center pointer-events-none">
+            <div className="absolute top-0 left-0 w-3.5 h-3.5 border-t-2 border-l-2 border-[#ff3344] drop-shadow-[0_0_6px_#ff3344]" />
+            <div className="absolute top-0 right-0 w-3.5 h-3.5 border-t-2 border-r-2 border-[#ff3344] drop-shadow-[0_0_6px_#ff3344]" />
+            <div className="absolute bottom-0 left-0 w-3.5 h-3.5 border-b-2 border-l-2 border-[#ff3344] drop-shadow-[0_0_6px_#ff3344]" />
+            <div className="absolute bottom-0 right-0 w-3.5 h-3.5 border-b-2 border-r-2 border-[#ff3344] drop-shadow-[0_0_6px_#ff3344]" />
           </div>
         </div>
       )}
 
-      {/* CENTER RETICLE & AUTHENTIC BATTLEZONE VECTOR SIGHT */}
+      {/* CENTER RETICLE & AUTHENTIC BATTLEZONE VECTOR SIGHT (Verde = Tu cañón) */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none flex flex-col items-center">
         {/* Battlezone Arcade Crosshair */}
         <div className="relative flex items-center justify-center">
@@ -227,7 +243,7 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
             viewBox="0 0 160 80"
             className={`w-44 h-22 transition-all duration-100 ${
               hitConfirmed
-                ? 'stroke-white drop-shadow-[0_0_12px_#ffffff] scale-110'
+                ? 'stroke-white drop-shadow-[0_0_16px_#ffffff] scale-110'
                 : 'stroke-[#00ff66] drop-shadow-[0_0_6px_rgba(0,255,102,0.8)]'
             }`}
           >
@@ -259,9 +275,20 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
             <line x1="134" y1="40" x2="150" y2="40" strokeWidth="1.5" />
           </svg>
 
-          {/* Hit confirmation ping */}
+          {/* HIGH-VISIBILITY ARCADE HITMARKER (Confirmación visual contundente de impacto en enemigo) */}
           {hitConfirmed && (
-            <div className="absolute inset-0 border border-white rounded-lg animate-ping pointer-events-none opacity-80" />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <svg viewBox="0 0 40 40" className="w-12 h-12 stroke-white drop-shadow-[0_0_12px_#ff2244]">
+                {/* 4 Diagonal Hitmarker Ticks */}
+                <line x1="8" y1="8" x2="15" y2="15" strokeWidth="2.5" stroke="#ffffff" />
+                <line x1="32" y1="8" x2="25" y2="15" strokeWidth="2.5" stroke="#ffffff" />
+                <line x1="8" y1="32" x2="15" y2="25" strokeWidth="2.5" stroke="#ffffff" />
+                <line x1="32" y1="32" x2="25" y2="25" strokeWidth="2.5" stroke="#ffffff" />
+              </svg>
+              <div className="absolute top-14 px-2.5 py-0.5 bg-red-600/95 text-white font-mono text-[11px] font-black tracking-widest uppercase rounded shadow-[0_0_15px_#ff0033] animate-pulse whitespace-nowrap">
+                ¡IMPACTO CONFIRMADO!
+              </div>
+            </div>
           )}
         </div>
 
@@ -458,8 +485,15 @@ export const CockpitHUD: React.FC<CockpitHUDProps> = ({
               })}
             </div>
           ) : (
-            <div className="text-[11px] text-[#00aa44]/80 tracking-widest uppercase bg-black/70 px-3 py-1 rounded border border-[#00ff66]/20">
-              WASD: MOVER TANQUE · RATÓN: MIRA BALÍSTICA · ESPACIO / CLIC IZQ: DISPARAR
+            <div className="flex flex-col items-center gap-1 text-center">
+              <div className="text-[10px] text-[#00ff66]/90 tracking-widest uppercase bg-black/80 px-3 py-0.5 rounded border border-[#00ff66]/30">
+                WASD: CONDUCIR · RATÓN: MIRA · ESPACIO / CLIC: DISPARAR · C: MODO MIRA
+              </div>
+              <div className="text-[9px] font-mono tracking-wider bg-black/90 px-3 py-0.5 rounded border border-white/20 flex items-center gap-2">
+                <span className="text-[#33ff88] font-bold">✚ MIRA VERDE: Tu Cañón</span>
+                <span className="text-white/40">|</span>
+                <span className="text-[#ff4455] font-bold">⛶ RECUADRO ROJO: Blanco Enemigo Fijado</span>
+              </div>
             </div>
           )}
         </div>

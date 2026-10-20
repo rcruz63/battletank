@@ -9,7 +9,7 @@ import React, { useEffect, useRef } from 'react';
 export interface RadarEntity {
   x: number;
   z: number;
-  type: 'enemy' | 'scout' | 'boss' | 'powerup' | 'building';
+  type: 'enemy' | 'scout' | 'boss' | 'powerup' | 'building' | 'repair';
   alive: boolean;
 }
 
@@ -177,6 +177,18 @@ export const TacticalRadar: React.FC<TacticalRadarProps> = ({
           ctx.fillStyle = '#ffff00';
           ctx.beginPath();
           ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+        } else if (ent.type === 'repair') {
+          // Repair Station / Punto de Curación: Glowing Emerald Medical Cross [+] with pulsating beacon ring
+          const pulse = 1 + Math.sin(Date.now() * 0.007) * 0.25;
+          ctx.strokeStyle = '#00ffaa';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(ex, ey, 5.5 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = '#00ff88';
+          ctx.fillRect(ex - 1.2, ey - 4.5, 2.4, 9);
+          ctx.fillRect(ex - 4.5, ey - 1.2, 9, 2.4);
         } else if (ent.type === 'building') {
           // Obstacle building / house: Vector outline square on radar
           ctx.strokeStyle = '#00bb44';

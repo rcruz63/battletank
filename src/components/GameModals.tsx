@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Play, RotateCcw, Volume2, VolumeX, Shield, Crosshair, Award } from 'lucide-react';
+import { Play, RotateCcw, Volume2, VolumeX, Shield, Crosshair, Award, Shuffle, Activity } from 'lucide-react';
 
 interface TitleScreenProps {
   onStart: () => void;
@@ -83,21 +83,26 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </p>
 
         {/* Feature Highlights */}
-        <div className="grid grid-cols-3 gap-3 my-6 w-full max-w-lg text-[11px] text-[#00aa44]">
-          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center">
-            <Crosshair className="w-4 h-4 text-[#00ff66] mb-1" />
-            <span className="font-bold text-[#00ff66]">BALLISTIC SIGHT</span>
-            <span className="text-[10px]">Real gravity & drop</span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 my-5 w-full max-w-xl text-[11px] text-[#00aa44]">
+          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center text-center">
+            <Shuffle className="w-4 h-4 text-[#00ff66] mb-1" />
+            <span className="font-bold text-[#00ff66]">MAPAS PROCEDURALES</span>
+            <span className="text-[10px] text-zinc-300">Relieve y aldeas únicos en cada partida</span>
           </div>
-          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center">
+          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center text-center">
+            <Activity className="w-4 h-4 text-[#00ffaa] mb-1" />
+            <span className="font-bold text-[#00ffaa]">PUNTOS DE CURACIÓN</span>
+            <span className="text-[10px] text-zinc-300">Bases médicas con baliza y cruz 3D</span>
+          </div>
+          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center text-center">
             <Shield className="w-4 h-4 text-[#00ff66] mb-1" />
-            <span className="font-bold text-[#00ff66]">HOUSES & COVER</span>
-            <span className="text-[10px]">Destructible obstacles</span>
+            <span className="font-bold text-[#00ff66]">COBERTURAS OPACAS</span>
+            <span className="text-[10px] text-zinc-300">Búnkeres, casas y torres tácticas</span>
           </div>
-          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center">
-            <Award className="w-4 h-4 text-[#00ff66] mb-1" />
-            <span className="font-bold text-[#00ff66]">BOSS PHASES</span>
-            <span className="text-[10px]">Goliath · Hydra · Titan</span>
+          <div className="p-2 border border-[#00ff66]/30 bg-black/60 rounded flex flex-col items-center text-center">
+            <Crosshair className="w-4 h-4 text-[#00ff66] mb-1" />
+            <span className="font-bold text-[#00ff66]">BALÍSTICA REAL</span>
+            <span className="text-[10px] text-zinc-300">Gravedad, parábola y encuadre limpio</span>
           </div>
         </div>
 
@@ -113,8 +118,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       </div>
 
       {/* Flat Control Hints */}
-      <div className="text-[11px] text-[#00aa44] tracking-widest text-center">
-        WASD Move Chassis · Mouse Aim Turret · L-Click / Space Fire · Esc Pause · M Mute
+      <div className="flex flex-col items-center gap-1 text-[11px] text-[#00aa44] tracking-wider text-center">
+        <div>WASD: Conducir · Ratón: Apuntar Cañón · Clic / Espacio: Disparar · C: Modo Control</div>
+        <div className="text-[10px] text-[#33ff88] font-mono">
+          ✚ Retícula Verde: Tu Cañón &nbsp;|&nbsp; <span className="text-[#00ff88]">✚ Radar: Punto de Curación</span> &nbsp;|&nbsp; <span className="text-[#ff4455]">[ ] Encuadre Rojo: Enemigo Enfocado</span>
+        </div>
       </div>
     </div>
   );
@@ -123,6 +131,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 interface PauseModalProps {
   onResume: () => void;
   onRestart: () => void;
+  onNewMapSeed?: () => void;
+  matchSeed?: number;
   stageNumber: number;
   score: number;
 }
@@ -130,32 +140,49 @@ interface PauseModalProps {
 export const PauseModal: React.FC<PauseModalProps> = ({
   onResume,
   onRestart,
+  onNewMapSeed,
+  matchSeed,
   stageNumber,
   score,
 }) => {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/85 font-mono text-[#00ff66] select-none">
       <div className="w-full max-w-sm p-6 border-2 border-[#00ff66] bg-black/95 rounded-xl shadow-[0_0_30px_rgba(0,255,102,0.4)] flex flex-col items-center text-center">
-        <h2 className="text-xl font-bold tracking-widest text-[#00ff66] mb-2 uppercase">
+        <h2 className="text-xl font-bold tracking-widest text-[#00ff66] mb-1 uppercase">
           SYSTEM PAUSED
         </h2>
-        <div className="text-xs text-[#00aa44] tracking-widest mb-6">
-          PHASE {stageNumber} · SCORE {score}
+        <div className="text-xs text-[#00aa44] tracking-widest mb-2">
+          FASE {stageNumber} · PUNTOS {score}
         </div>
+        {matchSeed && (
+          <div className="text-[10px] px-2.5 py-0.5 mb-5 border border-[#00aa44]/50 bg-black/80 rounded text-[#33ff88] tracking-widest font-mono">
+            SEMILLA MAPA PROCEDURAL: #{matchSeed}
+          </div>
+        )}
 
-        <div className="w-full flex flex-col gap-3">
+        <div className="w-full flex flex-col gap-2.5">
           <button
             onClick={onResume}
             className="w-full py-2.5 bg-[#00ff66] hover:bg-[#33ff88] text-black font-bold text-xs tracking-widest rounded transition-colors cursor-pointer"
           >
-            RESUME COMBAT (ESC)
+            CONTINUAR COMBATE (ESC)
           </button>
+          {onNewMapSeed && (
+            <button
+              onClick={onNewMapSeed}
+              className="w-full py-2.5 border border-[#00ffaa]/70 hover:bg-[#003318] text-[#00ffaa] text-xs font-semibold tracking-wider rounded transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              title="Generar nueva orografía y disposición de edificios aleatoria"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              NUEVO MAPA PROCEDURAL (RE-SEED)
+            </button>
+          )}
           <button
             onClick={onRestart}
             className="w-full py-2.5 border border-[#00ff66]/60 hover:bg-[#003311] text-[#00ff66] text-xs tracking-widest rounded transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            RESTART MISSION
+            REINICIAR MISIÓN
           </button>
         </div>
       </div>

@@ -40,6 +40,8 @@ export default function App() {
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
   const [controlMode, setControlMode] = useState<'solidary' | 'conic' | 'free'>('solidary');
+  const [isRepairing, setIsRepairing] = useState<boolean>(false);
+  const [matchSeed, setMatchSeed] = useState<number>(1980);
 
   // Sync gameState with document.body.dataset.state for ultra-mode compliance
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function App() {
       },
       onHitConfirmed: () => {
         setHitConfirmed(true);
-        setTimeout(() => setHitConfirmed(false), 120);
+        setTimeout(() => setHitConfirmed(false), 260);
       },
       onVictory: (_stgNum, isLastStage) => {
         setGameState(isLastStage ? 'victory' : 'victory');
@@ -99,6 +101,12 @@ export default function App() {
       },
       onControlModeUpdate: (m) => {
         setControlMode(m);
+      },
+      onRepairStatusUpdate: (rep) => {
+        setIsRepairing(rep);
+      },
+      onSeedUpdate: (seed) => {
+        setMatchSeed(seed);
       },
     });
 
@@ -238,6 +246,8 @@ export default function App() {
           isMuted={isMuted}
           isPointerLocked={isPointerLocked}
           controlMode={controlMode}
+          isRepairing={isRepairing}
+          matchSeed={matchSeed}
           onToggleMute={toggleMute}
           onPause={pauseGame}
           onRequestPointerLock={() => managerRef.current?.requestPointerLock()}
@@ -251,6 +261,11 @@ export default function App() {
         <PauseModal
           onResume={resumeGame}
           onRestart={() => startGame(stageNumber)}
+          onNewMapSeed={() => {
+            managerRef.current?.generateNewMapSeed();
+            resumeGame();
+          }}
+          matchSeed={matchSeed}
           stageNumber={stageNumber}
           score={score}
         />

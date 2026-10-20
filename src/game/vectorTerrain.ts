@@ -4,11 +4,12 @@
  */
 
 import * as THREE from 'three';
-import { getTerrainHeight, DEFAULT_TERRAIN_CONFIG } from './terrain.ts';
+import { getTerrainHeight, setTerrainSeed, DEFAULT_TERRAIN_CONFIG } from './terrain.ts';
 import { VECTOR_COLORS } from './vectorModels.ts';
 
 export function createVectorTerrain(): {
   terrainGroup: THREE.Group;
+  regenerateTerrain: (seed: number) => void;
   updateVisibleZone: (centerX: number, centerZ: number) => void;
 } {
   const terrainGroup = new THREE.Group();
@@ -29,11 +30,21 @@ export function createVectorTerrain(): {
   }
   planeGeo.computeVertexNormals();
 
+  // 1. Solid Dark Phosphor Ground Mesh (clearly opaque floor that visually grounds all tanks and buildings)
+  const solidGroundMat = new THREE.MeshBasicMaterial({
+    color: 0x02180c, // Rich dark vector ground earth (clearly visible solid surface)
+    depthWrite: true,
+    depthTest: true,
+  });
+  const solidGroundMesh = new THREE.Mesh(planeGeo, solidGroundMat);
+  terrainGroup.add(solidGroundMesh);
+
+  // 2. Primary Glowing Wireframe Ground Grid on top
   const wireGeo = new THREE.WireframeGeometry(planeGeo);
   const wireMat = new THREE.LineBasicMaterial({
-    color: VECTOR_COLORS.terrainWire,
+    color: 0x008833,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.95,
     depthTest: true,
   });
   const wireMesh = new THREE.LineSegments(wireGeo, wireMat);
@@ -134,8 +145,59 @@ export function createVectorTerrain(): {
   );
   terrainGroup.add(sunLine);
 
+  function regenerateTerrain(seed: number) {
+    // 0. Update active terrain seed
+    setTerrainSeed(seed);
+
+    // 1. Update ground plane vertex heights
+    for (let i = 0; i < posAttr.count; i++) {
+      const x = posAttr.getX(i);
+      const z = posAttr.getZ(i);
+      const y = getTerrainHeight(x, z);
+      posAttr.setY(i, y);
+    }
+    posAttr.needsUpdate = true;
+    planeGeo.computeVertexNormals();
+
+    // 2. Refresh top glowing wireframe
+    wireMesh.geometry.dispose();
+    wireMesh.geometry = new THREE.WireframeGeometry(planeGeo);
+
+    // 3. Refresh coordinate tactical cross markers
+    const newCrossVerts: number[] = [];
+    for (let x = -extent; x <= extent; x += spacing) {
+      for (let z = -extent; z <= extent; z += spacing) {
+        const y = getTerrainHeight(x, z) + 0.15;
+        const s = 1.2;
+        newCrossVerts.push(x - s, y, z, x + s, y, z);
+        newCrossVerts.push(x, y, z - s, x, y, z + s);
+      }
+    }
+    crossGeo.setAttribute('position', new THREE.Float32BufferAttribute(newCrossVerts, 3));
+
+    // 4. Refresh distant mountain horizon ridges
+    const newRidgePoints: number[] = [];
+    for (let i = 0; i < segmentsHorizon; i++) {
+      const angle1 = (i / segmentsHorizon) * Math.PI * 2;
+      const angle2 = ((i + 1) / segmentsHorizon) * Math.PI * 2;
+
+      const x1 = Math.cos(angle1) * ridgeRadius;
+      const z1 = Math.sin(angle1) * ridgeRadius;
+      const h1 = getTerrainHeight(x1, z1) + 12 + Math.sin(i * 1.5) * 8;
+
+      const x2 = Math.cos(angle2) * ridgeRadius;
+      const z2 = Math.sin(angle2) * ridgeRadius;
+      const h2 = getTerrainHeight(x2, z2) + 12 + Math.sin((i + 1) * 1.5) * 8;
+
+      newRidgePoints.push(x1, 0, z1, x1, h1, z1);
+      newRidgePoints.push(x1, h1, z1, x2, h2, z2);
+    }
+    ridgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(newRidgePoints, 3));
+  }
+
   return {
     terrainGroup,
+    regenerateTerrain,
     updateVisibleZone: (_centerX: number, _centerZ: number) => {
       // Dynamic updates if needed
     },

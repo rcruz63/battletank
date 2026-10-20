@@ -103,24 +103,25 @@ export function createVectorHouseModel(w: number, h: number, d: number, destruct
   const halfD = d / 2;
   const wallH = h * 0.65;
   const roofPeakH = h;
+  const skirtY = -5.0; // Deep foundation skirt embedded into slopes so buildings NEVER float
 
-  // 1. Semi-opaque solid wall & roof mesh (blocks line-of-sight & occludes objects behind)
+  // 1. Opaque solid wall & roof mesh (blocks line-of-sight & occludes objects behind)
   const wallTriangles: number[] = [
-    // Front wall (-Z)
-    -halfW, 0, -halfD,   halfW, 0, -halfD,   halfW, wallH, -halfD,
-    -halfW, 0, -halfD,   halfW, wallH, -halfD,  -halfW, wallH, -halfD,
+    // Front wall (-Z) from deep foundation skirt to wall top
+    -halfW, skirtY, -halfD,   halfW, skirtY, -halfD,   halfW, wallH, -halfD,
+    -halfW, skirtY, -halfD,   halfW, wallH, -halfD,  -halfW, wallH, -halfD,
 
     // Back wall (+Z)
-    halfW, 0, halfD,   -halfW, 0, halfD,   -halfW, wallH, halfD,
-    halfW, 0, halfD,   -halfW, wallH, halfD,   halfW, wallH, halfD,
+    halfW, skirtY, halfD,   -halfW, skirtY, halfD,   -halfW, wallH, halfD,
+    halfW, skirtY, halfD,   -halfW, wallH, halfD,   halfW, wallH, halfD,
 
     // Left wall (-X)
-    -halfW, 0, halfD,   -halfW, 0, -halfD,   -halfW, wallH, -halfD,
-    -halfW, 0, halfD,   -halfW, wallH, -halfD,  -halfW, wallH, halfD,
+    -halfW, skirtY, halfD,   -halfW, skirtY, -halfD,   -halfW, wallH, -halfD,
+    -halfW, skirtY, halfD,   -halfW, wallH, -halfD,  -halfW, wallH, halfD,
 
     // Right wall (+X)
-    halfW, 0, -halfD,    halfW, 0, halfD,    halfW, wallH, halfD,
-    halfW, 0, -halfD,    halfW, wallH, halfD,   halfW, wallH, -halfD,
+    halfW, skirtY, -halfD,    halfW, skirtY, halfD,    halfW, wallH, halfD,
+    halfW, skirtY, -halfD,    halfW, wallH, halfD,   halfW, wallH, -halfD,
 
     // Front gable triangle (-Z)
     -halfW, wallH, -halfD,  halfW, wallH, -halfD,  0, roofPeakH, -halfD,
@@ -141,16 +142,23 @@ export function createVectorHouseModel(w: number, h: number, d: number, destruct
   meshGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallTriangles, 3));
   meshGeo.computeVertexNormals();
 
-  // Dark tinted semi-opaque phosphor wall material (opacity ~0.74)
+  // Dark tinted opaque phosphor wall material (opacity ~0.95: solidly blocks line of sight while preserving retro mood)
   const wallMat = new THREE.MeshBasicMaterial({
-    color: 0x011a0c, // Deep dark phosphor green / tinted glass
+    color: 0x011e0e,
     transparent: true,
-    opacity: 0.74,
+    opacity: 0.95,
     side: THREE.DoubleSide,
     depthWrite: true,
+    depthTest: true,
   });
   const solidMesh = new THREE.Mesh(meshGeo, wallMat);
   group.add(solidMesh);
+
+  // Solid foundation slab at ground level so floor is never hollow
+  const slabGeo = new THREE.BoxGeometry(w * 1.02, 0.4, d * 1.02);
+  const slabMesh = new THREE.Mesh(slabGeo, wallMat);
+  slabMesh.position.set(0, -0.1, 0);
+  group.add(slabMesh);
 
   // 2. Glowing Vector Wireframe Edges
   const linesVerts: number[] = [
@@ -159,6 +167,12 @@ export function createVectorHouseModel(w: number, h: number, d: number, destruct
      halfW, 0, -halfD,  halfW, 0,  halfD,
      halfW, 0,  halfD, -halfW, 0,  halfD,
     -halfW, 0,  halfD, -halfW, 0, -halfD,
+
+    // Foundation corner anchors down into ground
+    -halfW, 0, -halfD, -halfW, skirtY, -halfD,
+     halfW, 0, -halfD,  halfW, skirtY, -halfD,
+     halfW, 0,  halfD,  halfW, skirtY,  halfD,
+    -halfW, 0,  halfD, -halfW, skirtY,  halfD,
 
     // Vertical wall corner posts
     -halfW, 0, -halfD, -halfW, wallH, -halfD,
@@ -210,7 +224,7 @@ export function createVectorHouseModel(w: number, h: number, d: number, destruct
 
 /**
  * Procedural Vector Bunker (Heavy reinforced military bunker).
- * Features semi-opaque armored concrete walls with glowing embrasures.
+ * Features solid opaque armored concrete walls with glowing embrasures and embedded foundation skirt.
  */
 export function createVectorBunkerModel(w: number, h: number, d: number): THREE.Group {
   const group = new THREE.Group();
@@ -220,24 +234,25 @@ export function createVectorBunkerModel(w: number, h: number, d: number): THREE.
   const halfD = d / 2;
   const topInsetW = halfW * 0.75;
   const topInsetD = halfD * 0.75;
+  const skirtY = -5.0; // Deep foundation skirt embedded into hills
 
-  // 1. Solid semi-opaque bunker walls & roof
+  // 1. Solid opaque bunker walls & roof
   const bunkerTriangles: number[] = [
     // Front sloped wall (-Z)
-    -halfW, 0, -halfD,  halfW, 0, -halfD,  topInsetW, h, -topInsetD,
-    -halfW, 0, -halfD,  topInsetW, h, -topInsetD, -topInsetW, h, -topInsetD,
+    -halfW, skirtY, -halfD,  halfW, skirtY, -halfD,  topInsetW, h, -topInsetD,
+    -halfW, skirtY, -halfD,  topInsetW, h, -topInsetD, -topInsetW, h, -topInsetD,
 
     // Back sloped wall (+Z)
-    halfW, 0, halfD,  -halfW, 0, halfD,  -topInsetW, h, topInsetD,
-    halfW, 0, halfD,  -topInsetW, h, topInsetD,  topInsetW, h, topInsetD,
+    halfW, skirtY, halfD,  -halfW, skirtY, halfD,  -topInsetW, h, topInsetD,
+    halfW, skirtY, halfD,  -topInsetW, h, topInsetD,  topInsetW, h, topInsetD,
 
     // Left sloped wall (-X)
-    -halfW, 0, halfD,  -halfW, 0, -halfD,  -topInsetW, h, -topInsetD,
-    -halfW, 0, halfD,  -topInsetW, h, -topInsetD, -topInsetW, h, topInsetD,
+    -halfW, skirtY, halfD,  -halfW, skirtY, -halfD,  -topInsetW, h, -topInsetD,
+    -halfW, skirtY, halfD,  -topInsetW, h, -topInsetD, -topInsetW, h, topInsetD,
 
     // Right sloped wall (+X)
-    halfW, 0, -halfD,  halfW, 0, halfD,  topInsetW, h, topInsetD,
-    halfW, 0, -halfD,  topInsetW, h, topInsetD,  topInsetW, h, -topInsetD,
+    halfW, skirtY, -halfD,  halfW, skirtY, halfD,  topInsetW, h, topInsetD,
+    halfW, skirtY, -halfD,  topInsetW, h, topInsetD,  topInsetW, h, -topInsetD,
 
     // Top flat roof
     -topInsetW, h, -topInsetD,  topInsetW, h, -topInsetD,  topInsetW, h, topInsetD,
@@ -249,14 +264,21 @@ export function createVectorBunkerModel(w: number, h: number, d: number): THREE.
   bunkerMeshGeo.computeVertexNormals();
 
   const bunkerWallMat = new THREE.MeshBasicMaterial({
-    color: 0x021910, // Dark armored bunker slate-green
+    color: 0x022515, // Dark armored bunker slate-green
     transparent: true,
-    opacity: 0.82, // Heavy reinforced opacity
+    opacity: 0.96, // Highly opaque armored bunker walls
     side: THREE.DoubleSide,
     depthWrite: true,
+    depthTest: true,
   });
   const bunkerSolid = new THREE.Mesh(bunkerMeshGeo, bunkerWallMat);
   group.add(bunkerSolid);
+
+  // Concrete foundation base slab
+  const slabGeo = new THREE.BoxGeometry(w * 1.05, 0.4, d * 1.05);
+  const slabMesh = new THREE.Mesh(slabGeo, bunkerWallMat);
+  slabMesh.position.set(0, -0.1, 0);
+  group.add(slabMesh);
 
   // 2. Wireframe structural frame & firing slit
   const verts: number[] = [
@@ -265,6 +287,12 @@ export function createVectorBunkerModel(w: number, h: number, d: number): THREE.
      halfW, 0, -halfD,  halfW, 0,  halfD,
      halfW, 0,  halfD, -halfW, 0,  halfD,
     -halfW, 0,  halfD, -halfW, 0, -halfD,
+
+    // Foundation skirt posts
+    -halfW, 0, -halfD, -halfW, skirtY, -halfD,
+     halfW, 0, -halfD,  halfW, skirtY, -halfD,
+     halfW, 0,  halfD,  halfW, skirtY,  halfD,
+    -halfW, 0,  halfD, -halfW, skirtY,  halfD,
 
     // Sloped corner posts
     -halfW, 0, -halfD, -topInsetW, h, -topInsetD,
@@ -298,7 +326,7 @@ export function createVectorBunkerModel(w: number, h: number, d: number): THREE.
 
 /**
  * Procedural Vector Observation Tower.
- * Solid semi-opaque observation deck and cabin with wireframe pylon framework.
+ * Solid opaque observation deck and cabin with wireframe pylon framework.
  */
 export function createVectorTowerModel(w: number, h: number, d: number): THREE.Group {
   const group = new THREE.Group();
@@ -307,22 +335,24 @@ export function createVectorTowerModel(w: number, h: number, d: number): THREE.G
   const halfW = w / 2;
   const halfD = d / 2;
   const platH = h * 0.85;
+  const skirtY = -5.0;
 
-  // 1. Semi-opaque platform deck and observation cabin
+  // 1. Solid opaque platform deck and observation cabin
   const deckMat = new THREE.MeshBasicMaterial({
-    color: 0x011b0e,
+    color: 0x012213,
     transparent: true,
-    opacity: 0.75,
+    opacity: 0.94,
     side: THREE.DoubleSide,
     depthWrite: true,
+    depthTest: true,
   });
 
-  const deckGeo = new THREE.BoxGeometry(w * 1.25, 0.35, d * 1.25);
+  const deckGeo = new THREE.BoxGeometry(w * 1.25, 0.4, d * 1.25);
   const deckMesh = new THREE.Mesh(deckGeo, deckMat);
   deckMesh.position.set(0, platH, 0);
   group.add(deckMesh);
 
-  // Observation cabin
+  // Observation cabin (solid opaque)
   const cabGeo = new THREE.BoxGeometry(w * 0.85, h - platH, d * 0.85);
   const cabMesh = new THREE.Mesh(cabGeo, deckMat);
   cabMesh.position.set(0, platH + (h - platH) * 0.5, 0);
@@ -330,11 +360,17 @@ export function createVectorTowerModel(w: number, h: number, d: number): THREE.G
 
   // 2. Wireframe truss framework
   const verts: number[] = [
-    // 4 Corner tower pylons
-    -halfW * 1.5, 0, -halfD * 1.5, -halfW, platH, -halfD,
-     halfW * 1.5, 0, -halfD * 1.5,  halfW, platH, -halfD,
-     halfW * 1.5, 0,  halfD * 1.5,  halfW, platH,  halfD,
-    -halfW * 1.5, 0,  halfD * 1.5, -halfW, platH,  halfD,
+    // 4 Corner tower pylons extending down into terrain
+    -halfW * 1.5, skirtY, -halfD * 1.5, -halfW, platH, -halfD,
+     halfW * 1.5, skirtY, -halfD * 1.5,  halfW, platH, -halfD,
+     halfW * 1.5, skirtY,  halfD * 1.5,  halfW, platH,  halfD,
+    -halfW * 1.5, skirtY,  halfD * 1.5, -halfW, platH,  halfD,
+
+    // Ground level footers
+    -halfW * 1.5, 0, -halfD * 1.5,  halfW * 1.5, 0, -halfD * 1.5,
+     halfW * 1.5, 0, -halfD * 1.5,  halfW * 1.5, 0,  halfD * 1.5,
+     halfW * 1.5, 0,  halfD * 1.5, -halfW * 1.5, 0,  halfD * 1.5,
+    -halfW * 1.5, 0,  halfD * 1.5, -halfW * 1.5, 0, -halfD * 1.5,
 
     // Mid-level horizontal cross braces
     -halfW * 1.25, platH * 0.5, -halfD * 1.25,  halfW * 1.25, platH * 0.5, -halfD * 1.25,
@@ -386,47 +422,83 @@ export function createVectorTankModel(color = VECTOR_COLORS.enemyOrange): {
   // 1. Lower Chassis / Hull
   const hullGeo = new THREE.BoxGeometry(2.4, 0.8, 3.8);
   const hull = createWireframeObject(hullGeo, color);
-  hull.position.y = 0.7;
+  hull.position.y = 0.55;
   group.add(hull);
+
+  // Solid dark armored hull occluder (so enemies look solid and occlude background terrain)
+  const solidHullMat = new THREE.MeshBasicMaterial({
+    color: 0x041108,
+    depthWrite: true,
+    depthTest: true,
+  });
+  const solidHull = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.78, 3.76), solidHullMat);
+  solidHull.position.y = 0.55;
+  group.add(solidHull);
 
   // 2. Glacis plate (sloped front armor)
   const glacisGeo = new THREE.BufferGeometry();
   const glacisVerts = new Float32Array([
-    -1.2, 0.3, -1.9,  1.2, 0.3, -1.9,
-    1.2, 0.3, -1.9,   1.2, 1.1, -1.2,
-    1.2, 1.1, -1.2,  -1.2, 1.1, -1.2,
-    -1.2, 1.1, -1.2, -1.2, 0.3, -1.9,
+    -1.2, 0.15, -1.9,  1.2, 0.15, -1.9,
+    1.2, 0.15, -1.9,   1.2, 0.95, -1.2,
+    1.2, 0.95, -1.2,  -1.2, 0.95, -1.2,
+    -1.2, 0.95, -1.2, -1.2, 0.15, -1.9,
   ]);
   glacisGeo.setAttribute('position', new THREE.BufferAttribute(glacisVerts, 3));
   const glacis = new THREE.LineSegments(glacisGeo, new THREE.LineBasicMaterial({ color }));
   group.add(glacis);
 
-  // 3 & 4. Left & Right Track assemblies
+  // 3 & 4. Left & Right Track assemblies (Bottom sits flush at Y = 0 on the ground)
   const trackGeo = new THREE.BoxGeometry(0.5, 0.7, 4.2);
   const leftTrack = createWireframeObject(trackGeo, color);
-  leftTrack.position.set(-1.45, 0.5, 0);
+  leftTrack.position.set(-1.45, 0.35, 0); // 0.35 - 0.35 = 0.0 ground contact
   group.add(leftTrack);
 
   const rightTrack = createWireframeObject(trackGeo, color);
-  rightTrack.position.set(1.45, 0.5, 0);
+  rightTrack.position.set(1.45, 0.35, 0); // 0.35 - 0.35 = 0.0 ground contact
   group.add(rightTrack);
+
+  // Solid track interior occluders
+  const solidTrackL = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.68, 4.16), solidHullMat);
+  solidTrackL.position.set(-1.45, 0.35, 0);
+  group.add(solidTrackL);
+
+  const solidTrackR = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.68, 4.16), solidHullMat);
+  solidTrackR.position.set(1.45, 0.35, 0);
+  group.add(solidTrackR);
+
+  // Tread ground contact lines (anchor tracks physically to terrain surface)
+  const contactGeo = new THREE.BufferGeometry();
+  const contactVerts = new Float32Array([
+    -1.45, 0.02, -2.1,  -1.45, 0.02, 2.1,
+     1.45, 0.02, -2.1,   1.45, 0.02, 2.1,
+    -1.7,  0.02, -2.1,  -1.2,  0.02, -2.1,
+    -1.7,  0.02,  2.1,  -1.2,  0.02,  2.1,
+     1.2,  0.02, -2.1,   1.7,  0.02, -2.1,
+     1.2,  0.02,  2.1,   1.7,  0.02,  2.1,
+  ]);
+  contactGeo.setAttribute('position', new THREE.BufferAttribute(contactVerts, 3));
+  const contactLines = new THREE.LineSegments(
+    contactGeo,
+    new THREE.LineBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.85 })
+  );
+  group.add(contactLines);
 
   // 5. Track Wheels lines (4 wheels per side)
   for (let i = -1.4; i <= 1.4; i += 0.9) {
     const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.52, 6);
     wheelGeo.rotateZ(Math.PI / 2);
     const wL = createWireframeObject(wheelGeo, color);
-    wL.position.set(-1.45, 0.45, i);
+    wL.position.set(-1.45, 0.32, i);
     group.add(wL);
 
     const wR = createWireframeObject(wheelGeo, color);
-    wR.position.set(1.45, 0.45, i);
+    wR.position.set(1.45, 0.32, i);
     group.add(wR);
   }
 
   // Turret sub-assembly (rotates independently)
   const turretGroup = new THREE.Group();
-  turretGroup.position.set(0, 1.3, -0.2);
+  turretGroup.position.set(0, 1.15, -0.2);
 
   // 6. Turret Cupola / faceted dome
   const turretGeo = new THREE.BoxGeometry(1.6, 0.7, 2.0);
@@ -737,16 +809,27 @@ export function createPowerUpModel(type: string): THREE.Group {
   if (type === 'TURBO_SPEED') color = VECTOR_COLORS.powerupSpeed;
   if (type === 'ENERGY_SHIELD') color = VECTOR_COLORS.powerupShield;
   if (type === 'RAPID_FIRE') color = VECTOR_COLORS.powerupRapid;
+  if (type === 'REPAIR_KIT') color = 0x00ff88; // Luminous healing emerald
 
   // Outer Icosahedron
   const outerGeo = new THREE.IcosahedronGeometry(0.9, 0);
   const outer = createWireframeObject(outerGeo, color);
   group.add(outer);
 
-  // Inner pulsating core
-  const innerGeo = new THREE.OctahedronGeometry(0.45, 0);
-  const inner = createWireframeObject(innerGeo, 0xffffff);
-  group.add(inner);
+  if (type === 'REPAIR_KIT') {
+    // Inner 3D Medical Cross [+] inside repair kit
+    const crossGroup = new THREE.Group();
+    const vBar = createWireframeObject(new THREE.BoxGeometry(0.2, 0.65, 0.2), 0x00ffaa);
+    const hBar = createWireframeObject(new THREE.BoxGeometry(0.65, 0.2, 0.2), 0x00ffaa);
+    crossGroup.add(vBar);
+    crossGroup.add(hBar);
+    group.add(crossGroup);
+  } else {
+    // Inner pulsating core
+    const innerGeo = new THREE.OctahedronGeometry(0.45, 0);
+    const inner = createWireframeObject(innerGeo, 0xffffff);
+    group.add(inner);
+  }
 
   // Vertical light beacon pole lines
   const poleGeo = new THREE.BufferGeometry();
@@ -754,10 +837,101 @@ export function createPowerUpModel(type: string): THREE.Group {
     'position',
     new THREE.BufferAttribute(new Float32Array([0, -2, 0, 0, 8, 0]), 3)
   );
-  const pole = new THREE.Line(poleGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.6 }));
+  const pole = new THREE.Line(poleGeo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 }));
   group.add(pole);
 
   return group;
+}
+
+/**
+ * Creates a 3D Vector Repair Station / Punto de Curación.
+ * Features a glowing hexagonal floor pad, 4 perimeter beacon pylons, and a floating 3D medical cross.
+ */
+export function createRepairStationModel(radius = 7.0): {
+  group: THREE.Group;
+  crossMesh: THREE.Group;
+  pulseRing: THREE.Line;
+} {
+  const group = new THREE.Group();
+  const healGreen = 0x00ff88;
+
+  // 1. Ground healing platform / pad: Glowing octagonal wireframe perimeter
+  const padGeo = new THREE.CylinderGeometry(radius, radius, 0.25, 8);
+  const padWire = createWireframeObject(padGeo, healGreen, 2);
+  padWire.position.y = 0.12;
+  group.add(padWire);
+
+  // Solid dark tinted pad base so ground looks energized
+  const padMat = new THREE.MeshBasicMaterial({
+    color: 0x022814,
+    depthWrite: true,
+    depthTest: true,
+  });
+  const padSolid = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.98, radius * 0.98, 0.2, 8), padMat);
+  padSolid.position.y = 0.1;
+  group.add(padSolid);
+
+  // 2. Concentric inner pulsing ring on the floor
+  const ringGeo = new THREE.BufferGeometry();
+  const segs = 24;
+  const ringPts: number[] = [];
+  for (let i = 0; i <= segs; i++) {
+    const a = (i / segs) * Math.PI * 2;
+    ringPts.push(Math.cos(a) * (radius * 0.5), 0.2, Math.sin(a) * (radius * 0.5));
+  }
+  ringGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPts, 3));
+  const pulseRing = new THREE.Line(
+    ringGeo,
+    new THREE.LineBasicMaterial({ color: 0x33ffaa, linewidth: 2, transparent: true, opacity: 0.9 })
+  );
+  group.add(pulseRing);
+
+  // 3. Four corner boundary pylon beacons
+  for (let i = 0; i < 4; i++) {
+    const angle = (i * Math.PI) / 2 + Math.PI / 4;
+    const px = Math.cos(angle) * (radius * 0.85);
+    const pz = Math.sin(angle) * (radius * 0.85);
+
+    const pylonGeo = new THREE.CylinderGeometry(0.2, 0.35, 3.2, 4);
+    const pylon = createWireframeObject(pylonGeo, healGreen);
+    pylon.position.set(px, 1.6, pz);
+    group.add(pylon);
+
+    // Vertical beacon light beam
+    const beamGeo = new THREE.BufferGeometry();
+    beamGeo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array([px, 3.2, pz, px, 14, pz]), 3)
+    );
+    const beam = new THREE.Line(
+      beamGeo,
+      new THREE.LineBasicMaterial({ color: 0x00ff66, transparent: true, opacity: 0.5 })
+    );
+    group.add(beam);
+  }
+
+  // 4. Floating 3D Vector Medical Cross [+] in the center
+  const crossMesh = new THREE.Group();
+  crossMesh.position.y = 2.4;
+
+  // Vertical bar of cross
+  const vBarGeo = new THREE.BoxGeometry(0.65, 2.0, 0.5);
+  const vBar = createWireframeObject(vBarGeo, 0x00ff88, 2);
+  crossMesh.add(vBar);
+
+  // Horizontal bar of cross
+  const hBarGeo = new THREE.BoxGeometry(2.0, 0.65, 0.5);
+  const hBar = createWireframeObject(hBarGeo, 0x00ff88, 2);
+  crossMesh.add(hBar);
+
+  // Core glow
+  const coreGeo = new THREE.OctahedronGeometry(0.4);
+  const core = createWireframeObject(coreGeo, 0xffffff);
+  crossMesh.add(core);
+
+  group.add(crossMesh);
+
+  return { group, crossMesh, pulseRing };
 }
 
 export interface Enemy3DHealthBar {

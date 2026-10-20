@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three';
-import { getTerrainHeight, getTerrainNormal, hasLineOfSight } from './terrain.ts';
+import { getTerrainHeight, getTerrainNormal, hasLineOfSight, setTerrainSeed } from './terrain.ts';
 import {
   BallisticProjectile,
   CANNON_MUZZLE_VELOCITY,
@@ -17,6 +17,8 @@ import {
   ENEMY_ARCHETYPES,
   EnemyType,
   PowerUpItem,
+  PowerUpType,
+  REPAIR_STATION_CONFIG,
   STAGE_CONFIGS,
   StageDefinition,
   calculatePlayerDamage,
@@ -36,6 +38,7 @@ import {
   createVectorHouseModel,
   createVectorBunkerModel,
   createVectorTowerModel,
+  createRepairStationModel,
   createEnemy3DHealthBar,
   updateEnemy3DHealthBar,
   Enemy3DHealthBar,
@@ -63,6 +66,7 @@ export interface EnemyEntity {
   speed: number;
   alive: boolean;
   shootCooldownTimer: number;
+  hitFlashTimer?: number;
   healthBar?: Enemy3DHealthBar;
   model: {
     group: THREE.Group;
@@ -116,7 +120,7 @@ export interface GameCallbacks {
   onHpUpdate: (hp: number, maxHp: number) => void;
   onReloadUpdate: (progress: number) => void;
   onStateUpdate: (playerX: number, playerZ: number, chassisYaw: number, turretYaw: number, turretPitch: number) => void;
-  onRadarUpdate: (entities: Array<{ x: number; z: number; type: 'enemy' | 'scout' | 'boss' | 'powerup' | 'building'; alive: boolean }>) => void;
+  onRadarUpdate: (entities: Array<{ x: number; z: number; type: 'enemy' | 'scout' | 'boss' | 'powerup' | 'building' | 'repair'; alive: boolean }>) => void;
   onActivePowerUpsUpdate: (powerUps: Array<{ type: string; remainingTime: number; totalDuration: number }>) => void;
   onBossUpdate: (active: boolean, name?: string, hp?: number, maxHp?: number) => void;
   onTargetedEnemyUpdate: (target: TargetedEnemyInfo | null) => void;
@@ -124,6 +128,8 @@ export interface GameCallbacks {
   onVictory: (stageNumber: number, isLastStage: boolean) => void;
   onGameOver: () => void;
   onControlModeUpdate?: (mode: 'solidary' | 'conic' | 'free') => void;
+  onRepairStatusUpdate?: (isRepairing: boolean) => void;
+  onSeedUpdate?: (seed: number) => void;
 }
 
 export class GameManager {
@@ -133,12 +139,16 @@ export class GameManager {
   // Control steering mode
   public controlMode: 'solidary' | 'conic' | 'free' = 'solidary';
 
+  // Procedural Match Seed
+  public matchSeed = 1980;
+
   // Three.js Core
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
   private animFrameId: number = 0;
   private clock: THREE.Clock;
+  private terrainController!: ReturnType<typeof createVectorTerrain>;
 
   // Player State
   public playerX = 0;
@@ -175,6 +185,18 @@ export class GameManager {
   private enemies: EnemyEntity[] = [];
   private powerUps: Array<PowerUpItem & { mesh: THREE.Group }> = [];
   private buildings: Array<VectorBuilding & { mesh: THREE.Group }> = [];
+  private repairStations: Array<{
+    id: string;
+    x: number;
+    y: number;
+    z: number;
+    radius: number;
+    mesh: THREE.Group;
+    crossMesh: THREE.Group;
+    pulseRing: THREE.Line;
+  }> = [];
+  private repairChimeTimer = 0;
+  public isRepairing = false;
   private projectiles: BallisticProjectile[] = [];
   private projectileMeshes: Map<string, THREE.Line> = new Map();
   private impactRings: ImpactRing[] = [];
@@ -187,6 +209,8 @@ export class GameManager {
   private isRunning = false;
   private isPaused = false;
   private bossEntity: EnemyEntity | null = null;
+  private remainingReinforcements = 0;
+  private reinforcementTimer = 0;
 
   constructor(container: HTMLDivElement, callbacks: GameCallbacks) {
     this.container = container;
@@ -225,8 +249,8 @@ export class GameManager {
     });
 
     // 4. Terrain & Horizon
-    const { terrainGroup } = createVectorTerrain();
-    this.scene.add(terrainGroup);
+    this.terrainController = createVectorTerrain();
+    this.scene.add(this.terrainController.terrainGroup);
 
     // 5. First-person Cockpit & Cannon Rig
     this.firstPersonRig = createFirstPersonCannonRig();
@@ -258,11 +282,42 @@ export class GameManager {
     this.currentStageIndex = stageIdx;
     const stage = STAGE_CONFIGS[this.currentStageIndex] || STAGE_CONFIGS[0];
 
-    // Clear previous entities
+    // 1. Procedural Sector Seed: generates unique terrain & obstacles per match and sector!
+    if (stageIdx === 0) {
+      // Roll fresh seed for new match
+      this.matchSeed = Math.floor(1000 + Math.random() * 8999);
+    }
+    const sectorSeed = this.matchSeed + this.currentStageIndex * 377;
+    setTerrainSeed(sectorSeed);
+    this.terrainController.regenerateTerrain(sectorSeed);
+    this.callbacks.onSeedUpdate?.(this.matchSeed);
+
+    // Clear previous entities and reset player position on newly generated terrain
     this.clearAllEntities();
     this.resetPlayerPosition();
 
-    // Spawn regular enemy tanks
+    // 2. Spawn Repair Station / Punto de Curación (Plataforma esmeralda con balizas y cruz médica 3D)
+    // Tactically positioned in an accessible sector clearing (radius ~32m from spawn)
+    const rsAngle = 0.85 + (stageIdx * 1.618) % (Math.PI * 2);
+    const rsDist = 32;
+    const rsX = Math.cos(rsAngle) * rsDist;
+    const rsZ = Math.sin(rsAngle) * rsDist;
+    const rsY = getTerrainHeight(rsX, rsZ);
+    const rsModel = createRepairStationModel(REPAIR_STATION_CONFIG.radius);
+    rsModel.group.position.set(rsX, rsY, rsZ);
+    this.scene.add(rsModel.group);
+    this.repairStations.push({
+      id: `repair-station-${stage.stageNumber}`,
+      x: rsX,
+      y: rsY,
+      z: rsZ,
+      radius: REPAIR_STATION_CONFIG.radius,
+      mesh: rsModel.group,
+      crossMesh: rsModel.crossMesh,
+      pulseRing: rsModel.pulseRing,
+    });
+
+    // 3. Spawn regular enemy tanks
     for (let i = 0; i < stage.regularTankCount; i++) {
       const angle = (i / stage.regularTankCount) * Math.PI * 2 + 0.3;
       const dist = 60 + Math.random() * 45;
@@ -271,7 +326,7 @@ export class GameManager {
       this.spawnEnemy('regular_tank', ex, ez);
     }
 
-    // Spawn surprise fast scout (distinct spawn alert)
+    // 4. Spawn surprise fast scout (distinct spawn alert)
     for (let i = 0; i < stage.fastScoutCount; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 85 + Math.random() * 35;
@@ -280,19 +335,26 @@ export class GameManager {
       this.spawnEnemy('fast_scout', sx, sz);
     }
 
-    // Spawn Stage Boss
-    const bossAngle = Math.PI * 0.75;
-    const bossDist = 110;
-    const bx = Math.cos(bossAngle) * bossDist;
-    const bz = Math.sin(bossAngle) * bossDist;
-    this.spawnEnemy(stage.bossType, bx, bz);
+    // 5. Spawn Stage Boss (only if bossType is specified for this stage)
+    this.bossEntity = null;
+    if (stage.bossType) {
+      const bossAngle = Math.PI * 0.75;
+      const bossDist = 110;
+      const bx = Math.cos(bossAngle) * bossDist;
+      const bz = Math.sin(bossAngle) * bossDist;
+      this.spawnEnemy(stage.bossType, bx, bz);
+    }
 
-    // Spawn Power-ups on hilltops
-    const powerTypes: Array<'DAMAGE_BOOST' | 'TURBO_SPEED' | 'ENERGY_SHIELD' | 'RAPID_FIRE'> = [
+    this.remainingReinforcements = stage.reinforcementCount || 0;
+    this.reinforcementTimer = 0;
+
+    // 6. Spawn Power-ups (includes instant REPAIR_KIT and combat boosts)
+    const powerTypes: PowerUpType[] = [
       'DAMAGE_BOOST',
       'TURBO_SPEED',
       'ENERGY_SHIELD',
       'RAPID_FIRE',
+      'REPAIR_KIT',
     ];
 
     for (let i = 0; i < stage.powerUpCount; i++) {
@@ -305,8 +367,8 @@ export class GameManager {
       this.spawnPowerUp(type, px, py, pz);
     }
 
-    // Spawn Stage Obstacle Buildings (Houses, Bunkers, Observation Towers)
-    const stageBuildings = generateStageBuildings(stage.stageNumber);
+    // 7. Spawn Stage Obstacle Buildings using the unique sectorSeed
+    const stageBuildings = generateStageBuildings(stage.stageNumber, sectorSeed);
     for (const b of stageBuildings) {
       let mesh: THREE.Group;
       if (b.type === 'house') {
@@ -331,6 +393,13 @@ export class GameManager {
   }
 
   private clearAllEntities() {
+    // Remove repair stations
+    this.repairStations.forEach((rs) => {
+      this.scene.remove(rs.mesh);
+    });
+    this.repairStations = [];
+    this.isRepairing = false;
+
     // Remove buildings
     this.buildings.forEach((b) => {
       this.scene.remove(b.mesh);
@@ -366,10 +435,12 @@ export class GameManager {
     this.sparkParticles = [];
   }
 
-  private spawnEnemy(type: EnemyType, x: number, z: number) {
+  private spawnEnemy(type: EnemyType | null, x: number, z: number) {
+    if (!type) return;
     const config = ENEMY_ARCHETYPES[type];
-    const y = getTerrainHeight(x, z);
+    if (!config) return;
 
+    const y = getTerrainHeight(x, z);
     let modelObj: EnemyEntity['model'];
 
     if (type === 'regular_tank') {
@@ -402,8 +473,7 @@ export class GameManager {
         mortarPipes: res.mortarPipes,
       };
       sound.playBossTelegraph();
-    } else {
-      // Titan Boss
+    } else if (type === 'boss_titan') {
       const res = createTitanBossModel();
       modelObj = {
         group: res.group,
@@ -411,6 +481,8 @@ export class GameManager {
         shardsGroup: res.shardsGroup,
       };
       sound.playBossTelegraph();
+    } else {
+      return;
     }
 
     // Floating 3D vector health bar over enemy
@@ -420,6 +492,9 @@ export class GameManager {
 
     modelObj.group.position.set(x, y, z);
     this.scene.add(modelObj.group);
+
+    // Initial shoot cooldown: relaxed in Sector 1 to give player comfortable learning pacing
+    const initialCooldown = (this.currentStageIndex === 0 ? 6.5 : 4.0) + Math.random() * 3.5;
 
     const enemy: EnemyEntity = {
       id: `enemy-${Date.now()}-${Math.random()}`,
@@ -433,7 +508,7 @@ export class GameManager {
       maxHp: config.maxHp,
       speed: config.speed,
       alive: true,
-      shootCooldownTimer: 4.5 + Math.random() * 4.0,
+      shootCooldownTimer: initialCooldown,
       healthBar: hb,
       model: modelObj,
       strafeDir: Math.random() > 0.5 ? 1 : -1,
@@ -447,7 +522,7 @@ export class GameManager {
     this.enemies.push(enemy);
   }
 
-  private spawnPowerUp(type: 'DAMAGE_BOOST' | 'TURBO_SPEED' | 'ENERGY_SHIELD' | 'RAPID_FIRE', x: number, y: number, z: number) {
+  private spawnPowerUp(type: PowerUpType, x: number, y: number, z: number) {
     const mesh = createPowerUpModel(type);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
@@ -459,7 +534,7 @@ export class GameManager {
       y,
       z,
       radius: 2.2,
-      duration: 14.0,
+      duration: type === 'REPAIR_KIT' ? 0 : 14.0,
       collected: false,
       mesh,
     });
@@ -639,6 +714,78 @@ export class GameManager {
     }
   }
 
+  /**
+   * Spawns intense electric impact sparks and neon hit brackets when a projectile strikes enemy armor.
+   * Visually and distinctively confirms enemy hit vs terrain hit.
+   */
+  private spawnEnemyHitSparks(x: number, y: number, z: number, _damage: number) {
+    // 1. High-velocity bright electric white and golden sparks
+    const sparkCount = 14;
+    for (let i = 0; i < sparkCount; i++) {
+      const sparkGeo = new THREE.BufferGeometry();
+      sparkGeo.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute([0, 0, 0, 0, 0.5, 0], 3)
+      );
+      const sparkLine = new THREE.Line(
+        sparkGeo,
+        new THREE.LineBasicMaterial({
+          color: i % 2 === 0 ? 0xffffff : 0xffaa00,
+          linewidth: 2,
+          transparent: true,
+          opacity: 1.0,
+        })
+      );
+      sparkLine.position.set(x, y, z);
+      this.scene.add(sparkLine);
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 11 + Math.random() * 15;
+      this.sparkParticles.push({
+        line: sparkLine,
+        x,
+        y,
+        z,
+        vx: Math.cos(angle) * speed,
+        vy: 3 + Math.random() * 8,
+        vz: Math.sin(angle) * speed,
+        age: 0,
+        maxAge: 0.28 + Math.random() * 0.15,
+      });
+    }
+
+    // 2. Expanding bright neon hit bracket ring
+    const ringGeo = new THREE.BufferGeometry();
+    const ringPts: number[] = [];
+    const segs = 16;
+    for (let i = 0; i <= segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      ringPts.push(Math.cos(a), 0, Math.sin(a));
+    }
+    ringGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPts, 3));
+    const ringLine = new THREE.Line(
+      ringGeo,
+      new THREE.LineBasicMaterial({
+        color: 0xff3355,
+        transparent: true,
+        opacity: 1.0,
+        linewidth: 2,
+      })
+    );
+    ringLine.position.set(x, y, z);
+    this.scene.add(ringLine);
+
+    this.impactRings.push({
+      mesh: ringLine,
+      x,
+      y,
+      z,
+      radius: 0.5,
+      maxRadius: 4.0,
+      opacity: 1.0,
+    });
+  }
+
   public update(dt: number) {
     if (!this.isRunning || this.isPaused) return;
 
@@ -678,6 +825,9 @@ export class GameManager {
 
     // 5. Update Power-ups
     this.updatePowerUps(clampedDt);
+
+    // 5b. Update Repair Stations (Puntos de Curación)
+    this.updateRepairStations(clampedDt);
 
     // 6. Update Visual Particles and Rings
     this.updateEffects(clampedDt);
@@ -855,8 +1005,10 @@ export class GameManager {
           if (hit) {
             proj.alive = false;
             enemy.hp -= proj.damage;
+            enemy.hitFlashTimer = 0.22;
+            sound.playHitConfirm();
             sound.playExplosion(enemy.hp <= 0);
-            this.spawnImpactEffect(proj.x, proj.y, proj.z, VECTOR_COLORS.playerGreen, true);
+            this.spawnEnemyHitSparks(proj.x, proj.y, proj.z, proj.damage);
             this.callbacks.onHitConfirmed();
 
             if (enemy.hp <= 0) {
@@ -865,6 +1017,11 @@ export class GameManager {
               const scoreVal = ENEMY_ARCHETYPES[enemy.type].scoreValue;
               this.score += scoreVal;
               this.callbacks.onScoreUpdate(this.score);
+
+              // If reinforcements remain, queue next reinforcement spawn after 6s
+              if (this.remainingReinforcements > 0 && this.reinforcementTimer <= 0) {
+                this.reinforcementTimer = 6.0;
+              }
             }
             break;
           }
@@ -1087,21 +1244,64 @@ export class GameManager {
         }
       }
 
-      // Height on terrain
-      enemy.y = getTerrainHeight(enemy.x, enemy.z);
-      enemy.model.group.position.set(enemy.x, enemy.y, enemy.z);
-      enemy.model.group.rotation.y = enemy.yaw;
+      // Physical ground contact & terrain slope alignment (tracks hug hillsides)
+      const forwardX = Math.sin(enemy.yaw);
+      const forwardZ = Math.cos(enemy.yaw);
+      const rightX = Math.cos(enemy.yaw);
+      const rightZ = -Math.sin(enemy.yaw);
+
+      if (enemy.type === 'fast_scout') {
+        // Fast scout is an agile aerial hover skimmer (smooth hover 2.2m above terrain)
+        enemy.y = getTerrainHeight(enemy.x, enemy.z) + 2.2;
+        enemy.model.group.position.set(enemy.x, enemy.y, enemy.z);
+        enemy.model.group.rotation.set(0, enemy.yaw, 0);
+      } else {
+        // Ground tanks: calculate track contact points to pitch and roll with terrain slope
+        const trackSpanL = enemy.type.startsWith('boss') ? 2.8 : 1.8;
+        const trackSpanW = enemy.type.startsWith('boss') ? 2.2 : 1.4;
+
+        const hFront = getTerrainHeight(enemy.x + forwardX * trackSpanL, enemy.z + forwardZ * trackSpanL);
+        const hBack = getTerrainHeight(enemy.x - forwardX * trackSpanL, enemy.z - forwardZ * trackSpanL);
+        const hRight = getTerrainHeight(enemy.x + rightX * trackSpanW, enemy.z + rightZ * trackSpanW);
+        const hLeft = getTerrainHeight(enemy.x - rightX * trackSpanW, enemy.z - rightZ * trackSpanW);
+
+        const pitch = Math.atan2(hBack - hFront, trackSpanL * 2);
+        const roll = Math.atan2(hLeft - hRight, trackSpanW * 2);
+        const groundY = (hFront + hBack + hLeft + hRight) / 4;
+
+        enemy.y = groundY;
+        enemy.model.group.position.set(enemy.x, enemy.y, enemy.z);
+        enemy.model.group.rotation.set(pitch, enemy.yaw, roll, 'YXZ');
+      }
+
+      // Hit flash visual decay
+      if (enemy.hitFlashTimer && enemy.hitFlashTimer > 0) {
+        enemy.hitFlashTimer -= dt;
+      }
 
       // Update 3D floating health bar facing camera
       if (enemy.healthBar) {
         updateEnemy3DHealthBar(enemy.healthBar, enemy.hp, enemy.maxHp, this.camera.position);
       }
 
-      // Shooting logic
+      // Shooting logic factoring in stage-specific cooldown pacing
       enemy.shootCooldownTimer -= dt;
       if (enemy.shootCooldownTimer <= 0 && canSeePlayer && dist < 170) {
         this.enemyFire(enemy);
-        enemy.shootCooldownTimer = ENEMY_ARCHETYPES[enemy.type].shootCooldown * (0.8 + Math.random() * 0.4);
+        const cdMult = STAGE_CONFIGS[this.currentStageIndex]?.enemyCooldownMult || 1.0;
+        enemy.shootCooldownTimer = ENEMY_ARCHETYPES[enemy.type].shootCooldown * cdMult * (0.85 + Math.random() * 0.35);
+      }
+    }
+
+    // Reinforcements arrival countdown
+    if (this.remainingReinforcements > 0 && this.reinforcementTimer > 0) {
+      this.reinforcementTimer -= dt;
+      if (this.reinforcementTimer <= 0) {
+        this.remainingReinforcements--;
+        const rAngle = Math.random() * Math.PI * 2;
+        const rDist = 75 + Math.random() * 30;
+        this.spawnEnemy('regular_tank', Math.cos(rAngle) * rDist, Math.sin(rAngle) * rDist);
+        sound.playScoutAlert();
       }
     }
   }
@@ -1130,21 +1330,117 @@ export class GameManager {
       if (collected) {
         pu.collected = true;
         this.scene.remove(pu.mesh);
-        sound.playPowerUp();
 
         if (pu.type === 'ENERGY_SHIELD') {
           this.playerHp = Math.min(this.playerMaxHp, this.playerHp + 50);
+          sound.playPowerUp();
+        } else if (pu.type === 'REPAIR_KIT') {
+          this.playerHp = Math.min(this.playerMaxHp, this.playerHp + 60);
+          sound.playRepairKit();
+        } else {
+          sound.playPowerUp();
         }
 
-        this.powerUpTimers[pu.type] = {
-          remaining: pu.duration,
-          total: pu.duration,
-        };
+        if (pu.duration > 0) {
+          this.powerUpTimers[pu.type] = {
+            remaining: pu.duration,
+            total: pu.duration,
+          };
+        }
 
         this.score += 350;
         this.callbacks.onScoreUpdate(this.score);
+        this.callbacks.onHpUpdate(Math.round(this.playerHp), this.playerMaxHp);
       }
     }
+  }
+
+  private updateRepairStations(dt: number) {
+    let activelyHealing = false;
+
+    for (const rs of this.repairStations) {
+      // 1. Animate 3D medical cross rotation
+      if (rs.crossMesh) {
+        rs.crossMesh.rotation.y += dt * 1.5;
+      }
+      // 2. Animate pulsating floor pad ring
+      if (rs.pulseRing) {
+        rs.pulseRing.rotation.y -= dt * 0.8;
+      }
+
+      // 3. Proximity detection with player tank
+      const dx = this.playerX - rs.x;
+      const dz = this.playerZ - rs.z;
+      const dist = Math.hypot(dx, dz);
+
+      if (dist <= rs.radius) {
+        activelyHealing = true;
+
+        if (this.playerHp < this.playerMaxHp) {
+          // Regenerate player armor at rate from config (+35 HP/sec)
+          this.playerHp = Math.min(this.playerMaxHp, this.playerHp + REPAIR_STATION_CONFIG.healPerSecond * dt);
+          this.callbacks.onHpUpdate(Math.round(this.playerHp), this.playerMaxHp);
+
+          // Audio repair hum chime pulse
+          this.repairChimeTimer += dt;
+          if (this.repairChimeTimer >= 0.5) {
+            this.repairChimeTimer = 0;
+            sound.playRepairHum();
+          }
+
+          // Emit emerald healing nanite sparks rising from pad
+          if (Math.random() < 0.45) {
+            this.spawnRepairSparks(this.playerX, this.playerY - 1.2, this.playerZ);
+          }
+        }
+      }
+    }
+
+    if (activelyHealing !== this.isRepairing) {
+      this.isRepairing = activelyHealing;
+      this.callbacks.onRepairStatusUpdate?.(this.isRepairing);
+    }
+  }
+
+  private spawnRepairSparks(x: number, y: number, z: number) {
+    const sparkGeo = new THREE.BufferGeometry();
+    sparkGeo.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([0, 0, 0, 0, 0.45, 0], 3)
+    );
+    const sparkLine = new THREE.Line(
+      sparkGeo,
+      new THREE.LineBasicMaterial({
+        color: 0x00ff88,
+        linewidth: 2,
+        transparent: true,
+        opacity: 0.95,
+      })
+    );
+    const jitterX = x + (Math.random() - 0.5) * 3.0;
+    const jitterZ = z + (Math.random() - 0.5) * 3.0;
+    sparkLine.position.set(jitterX, y, jitterZ);
+    this.scene.add(sparkLine);
+
+    this.sparkParticles.push({
+      line: sparkLine,
+      x: jitterX,
+      y,
+      z: jitterZ,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: 4.5 + Math.random() * 3.5,
+      vz: (Math.random() - 0.5) * 1.5,
+      age: 0,
+      maxAge: 0.5 + Math.random() * 0.25,
+    });
+  }
+
+  /**
+   * Generates a brand new procedural map seed and restarts current stage.
+   */
+  public generateNewMapSeed(newSeed?: number) {
+    this.matchSeed = newSeed ?? Math.floor(1000 + Math.random() * 8999);
+    this.startStage(this.currentStageIndex);
   }
 
   private updateEffects(dt: number) {
@@ -1225,7 +1521,7 @@ export class GameManager {
     );
 
     // Radar entities
-    const radarData: Array<{ x: number; z: number; type: 'enemy' | 'scout' | 'boss' | 'powerup' | 'building'; alive: boolean }> = this.enemies
+    const radarData: Array<{ x: number; z: number; type: 'enemy' | 'scout' | 'boss' | 'powerup' | 'building' | 'repair'; alive: boolean }> = this.enemies
       .filter((e) => e.alive)
       .map((e) => ({
         x: e.x,
@@ -1233,6 +1529,11 @@ export class GameManager {
         type: (e.type === 'fast_scout' ? 'scout' : e.type.startsWith('boss') ? 'boss' : 'enemy') as 'enemy' | 'scout' | 'boss',
         alive: e.alive,
       }));
+
+    // Repair Stations on radar (green medical cross [+])
+    this.repairStations.forEach((rs) => {
+      radarData.push({ x: rs.x, z: rs.z, type: 'repair', alive: true });
+    });
 
     this.powerUps
       .filter((p) => !p.collected)

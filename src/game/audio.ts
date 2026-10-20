@@ -357,6 +357,66 @@ class SoundManager {
   }
 
   /**
+   * Ambient pulsing chime played gently while inside a Repair Station.
+   */
+  public playRepairHum() {
+    if (this.muted) return;
+    this.initContext();
+    if (!this.ctx) return;
+    const dest = this.getDestination();
+    if (!dest) return;
+
+    const t = this.ctx.currentTime;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, t); // C5
+      osc.frequency.exponentialRampToValueAtTime(659.25, t + 0.18); // E5
+
+      gain.gain.setValueAtTime(0.06, t);
+      gain.gain.linearRampToValueAtTime(0.0001, t + 0.2);
+
+      osc.connect(gain);
+      gain.connect(dest);
+      this.trackTransient(osc);
+      osc.start(t);
+      osc.stop(t + 0.22);
+    } catch {}
+  }
+
+  /**
+   * Health pack / Repair kit instant recovery chime.
+   */
+  public playRepairKit() {
+    if (this.muted) return;
+    this.initContext();
+    if (!this.ctx) return;
+    const dest = this.getDestination();
+    if (!dest) return;
+
+    const freqs = [440, 554.37, 659.25, 880];
+    freqs.forEach((f, idx) => {
+      const t = this.ctx!.currentTime + idx * 0.06;
+      try {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(f, t);
+
+        gain.gain.setValueAtTime(0.14, t);
+        gain.gain.linearRampToValueAtTime(0.0001, t + 0.15);
+
+        osc.connect(gain);
+        gain.connect(dest);
+        this.trackTransient(osc);
+        osc.start(t);
+        osc.stop(t + 0.16);
+      } catch {}
+    });
+  }
+
+  /**
    * Fast scout alert sound (high vector radar ping).
    */
   public playScoutAlert() {

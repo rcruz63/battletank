@@ -3,7 +3,7 @@
  * Pure logic testable with node:test.
  */
 
-export type PowerUpType = 'DAMAGE_BOOST' | 'TURBO_SPEED' | 'ENERGY_SHIELD' | 'RAPID_FIRE';
+export type PowerUpType = 'DAMAGE_BOOST' | 'TURBO_SPEED' | 'ENERGY_SHIELD' | 'RAPID_FIRE' | 'REPAIR_KIT';
 
 export interface PowerUpItem {
   id: string;
@@ -12,9 +12,19 @@ export interface PowerUpItem {
   y: number;
   z: number;
   radius: number;
-  duration: number; // Duration of effect when collected
+  duration: number; // Duration of effect when collected (or 0 for instant instant heal)
   collected: boolean;
 }
+
+export interface RepairStationConfig {
+  radius: number;
+  healPerSecond: number;
+}
+
+export const REPAIR_STATION_CONFIG: RepairStationConfig = {
+  radius: 7.0,
+  healPerSecond: 35,
+};
 
 export type EnemyType = 'regular_tank' | 'fast_scout' | 'boss_goliath' | 'boss_hydra' | 'boss_titan';
 
@@ -98,39 +108,58 @@ export interface StageDefinition {
   stageNumber: number;
   name: string;
   subtitle: string;
-  regularTankCount: number;
+  regularTankCount: number; // Initial tanks spawned
+  reinforcementCount: number; // Reinforcement tanks spawned during the battle
   fastScoutCount: number;
-  bossType: EnemyType;
+  bossType: EnemyType | null;
   powerUpCount: number;
+  enemyCooldownMult?: number; // Slower enemy fire in early sectors
 }
 
 export const STAGE_CONFIGS: StageDefinition[] = [
   {
     stageNumber: 1,
-    name: 'PHASE 1: VALLEY OF WIRE',
-    subtitle: 'Clear hostile tanks & eliminate Goliath',
-    regularTankCount: 3,
-    fastScoutCount: 1, // Exceptionally fast surprise enemy
-    bossType: 'boss_goliath',
+    name: 'FASE 1: VALLE DE MALLA',
+    subtitle: 'Patrulla inicial: neutraliza los 2 tanques hostiles',
+    regularTankCount: 2, // Exactly 2 enemies as requested by user
+    reinforcementCount: 1, // 1 reinforcement tank after first kill
+    fastScoutCount: 0, // No surprise fast scouts in phase 1
+    bossType: null, // No mega-boss in phase 1!
     powerUpCount: 3,
+    enemyCooldownMult: 1.5, // 50% more time between enemy shots
   },
   {
     stageNumber: 2,
-    name: 'PHASE 2: RIDGE SIEGE',
-    subtitle: 'Repel high-mobility flankers & defeat Hydra',
-    regularTankCount: 5,
-    fastScoutCount: 2,
-    bossType: 'boss_hydra',
+    name: 'FASE 2: ASALTO A LA COLINA',
+    subtitle: 'Derriba los tanques blindados y elimina al Coloso Goliath',
+    regularTankCount: 3,
+    reinforcementCount: 1,
+    fastScoutCount: 1, // First surprise fast scout appears
+    bossType: 'boss_goliath',
     powerUpCount: 4,
+    enemyCooldownMult: 1.15,
   },
   {
     stageNumber: 3,
-    name: 'PHASE 3: APEX TITAN CITADEL',
-    subtitle: 'Overcome enemy onslaught & destroy Titan Overlord',
+    name: 'FASE 3: BATERÍA MORTAL',
+    subtitle: 'Sobrevive al bombardeo y neutraliza al Hydra Behemoth',
+    regularTankCount: 5,
+    reinforcementCount: 2,
+    fastScoutCount: 2,
+    bossType: 'boss_hydra',
+    powerUpCount: 4,
+    enemyCooldownMult: 1.0,
+  },
+  {
+    stageNumber: 4,
+    name: 'FASE 4: CIUDADELA TITÁN',
+    subtitle: 'Asalto final contra el Titan Apex Overlord',
     regularTankCount: 7,
+    reinforcementCount: 2,
     fastScoutCount: 3,
     bossType: 'boss_titan',
     powerUpCount: 5,
+    enemyCooldownMult: 0.9,
   },
 ];
 

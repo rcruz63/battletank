@@ -121,7 +121,7 @@ test('enemy archetypes have unique distinct behaviors and boss flag', () => {
 });
 
 test('stage configurations scale smoothly in difficulty', () => {
-  assert.equal(STAGE_CONFIGS.length, 3);
+  assert.equal(STAGE_CONFIGS.length, 4);
   assert.ok(STAGE_CONFIGS[1].regularTankCount > STAGE_CONFIGS[0].regularTankCount);
   assert.ok(STAGE_CONFIGS[2].regularTankCount > STAGE_CONFIGS[1].regularTankCount);
 });
@@ -167,3 +167,47 @@ test('buildings block tank movement via 2D oriented box collision', async () => 
   const unblocked = isLineBlockedByBuildings(0, 2, 10, 20, 2, 10, [bld]);
   assert.equal(unblocked, false, 'Ray passing through destroyed building should not be blocked');
 });
+
+test('procedural terrain generates distinct topography across different seeds', async () => {
+  const { setTerrainSeed, getTerrainHeight } = await import('./terrain.ts');
+
+  // Height at (60, 60) under seed 1980
+  setTerrainSeed(1980);
+  const h1 = getTerrainHeight(60, 60);
+
+  // Height at (60, 60) under seed 4821
+  setTerrainSeed(4821);
+  const h2 = getTerrainHeight(60, 60);
+
+  // Height at (60, 60) under seed 9123
+  setTerrainSeed(9123);
+  const h3 = getTerrainHeight(60, 60);
+
+  assert.notEqual(h1, h2, 'Different seeds must produce different terrain heights');
+  assert.notEqual(h2, h3, 'Different seeds must produce different terrain heights');
+
+  // Reset back to 1980
+  setTerrainSeed(1980);
+});
+
+test('procedural building generation creates unique layouts per seed', async () => {
+  const { generateStageBuildings } = await import('./buildings.ts');
+
+  const b1 = generateStageBuildings(1, 1001);
+  const b2 = generateStageBuildings(1, 7777);
+
+  assert.ok(b1.length > 0, 'Stage 1 buildings should be generated');
+  assert.ok(b2.length > 0, 'Stage 1 buildings should be generated');
+
+  // Positions or layouts between seeds should be different
+  const firstPos1 = `${b1[0].x},${b1[0].z}`;
+  const firstPos2 = `${b2[0].x},${b2[0].z}`;
+  assert.notEqual(firstPos1, firstPos2, 'Different seeds should generate distinct building placements');
+});
+
+test('repair station config specifies valid radius and healing rate', async () => {
+  const { REPAIR_STATION_CONFIG } = await import('./rules.ts');
+  assert.ok(REPAIR_STATION_CONFIG.radius >= 5.0, 'Repair pad should have ample radius');
+  assert.ok(REPAIR_STATION_CONFIG.healPerSecond > 0, 'Repair pad should heal positive HP per second');
+});
+
